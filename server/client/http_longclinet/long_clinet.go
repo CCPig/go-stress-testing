@@ -1,4 +1,3 @@
-// Package httplongclinet Keepalive
 package httplongclinet
 
 import (
@@ -8,9 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/http2"
-
 	"github.com/link1st/go-stress-testing/model"
+	"golang.org/x/net/http2"
 )
 
 var (
@@ -36,23 +34,14 @@ func getClient(i uint64) *http.Client {
 func setClient(i uint64, request *model.Request) *http.Client {
 	mutex.Lock()
 	defer mutex.Unlock()
-	client := createLangHTTPClient(request)
+	client := createLangHttpClient(request)
 	clients[i] = client
 	return client
 }
 
-// createLangHTTPClient 初始化长连接客户端参数
-func createLangHTTPClient(request *model.Request) *http.Client {
-	tr := &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		MaxIdleConns:        0,                // 最大连接数,默认0无穷大
-		MaxIdleConnsPerHost: request.MaxCon,   // 对每个host的最大连接数量(MaxIdleConnsPerHost<=MaxIdleConns)
-		IdleConnTimeout:     90 * time.Second, // 多长时间未使用自动关闭连接
-		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
-	}
+// createLangHttpClient 初始化长连接客户端参数
+func createLangHttpClient(request *model.Request) *http.Client {
+	tr := &http.Transport{}
 	if request.HTTP2 {
 		// 使用真实证书 验证证书 模拟真实请求
 		tr = &http.Transport{
@@ -66,6 +55,18 @@ func createLangHTTPClient(request *model.Request) *http.Client {
 			TLSClientConfig:     &tls.Config{InsecureSkipVerify: false},
 		}
 		_ = http2.ConfigureTransport(tr)
+	} else {
+		// 跳过证书验证
+		tr = &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			MaxIdleConns:        0,                // 最大连接数,默认0无穷大
+			MaxIdleConnsPerHost: request.MaxCon,   // 对每个host的最大连接数量(MaxIdleConnsPerHost<=MaxIdleConns)
+			IdleConnTimeout:     90 * time.Second, // 多长时间未使用自动关闭连接
+			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+		}
 	}
 	return &http.Client{
 		Transport: tr,

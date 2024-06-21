@@ -1,9 +1,9 @@
-// Package client 客户端接口定义 client
+// Package client clientpackage client
 package client
 
-// Clienter 接口 获取连接、发送数据、关闭 等
+// Clienter 接口 注册、连接、发送 等
 type Clienter interface {
 	GetConn() (err error)
-	Send()
 	Close() (err error)
+	Send()
 }

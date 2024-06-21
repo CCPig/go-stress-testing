@@ -27,7 +27,7 @@ func init() {
 }
 
 // WebSocket webSocket go link
-func WebSocket(_ context.Context, chanID uint64, ch chan<- *model.RequestResults, totalNumber uint64,
+func WebSocket(ctx context.Context, chanID uint64, ch chan<- *model.RequestResults, totalNumber uint64,
 	wg *sync.WaitGroup, request *model.Request, ws *client.WebSocket) {
 	defer func() {
 		wg.Done()
@@ -72,7 +72,7 @@ func webSocketRequest(chanID uint64, ch chan<- *model.RequestResults, i uint64, 
 	var (
 		startTime = time.Now()
 		isSucceed = false
-		errCode   int
+		errCode   = model.HTTPOk
 		msg       []byte
 	)
 	// 需要发送的数据

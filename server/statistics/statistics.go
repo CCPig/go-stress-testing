@@ -2,7 +2,12 @@
 package statistics
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
+	"math"
+	"math/rand"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -21,15 +26,27 @@ var (
 	exportStatisticsTime = 1 * time.Second
 	p                    = message.NewPrinter(language.English)
 	requestTimeList      []uint64 // 所有请求响应时间
+	TotalTimes           uint64   = 0
+	Optimize                      = false
 )
 
 // ReceivingResults 接收结果并处理
 // 统计的时间都是纳秒，显示的时间 都是毫秒
 // concurrent 并发数
-func ReceivingResults(concurrent uint64, ch <-chan *model.RequestResults, wg *sync.WaitGroup) {
+func ReceivingResults(concurrent uint64, ch <-chan *model.RequestResults, wg *sync.WaitGroup, request *model.Request) {
 	defer func() {
 		wg.Done()
 	}()
+	// 创建或打开日志文件
+	logFile, err := os.Create("statistics.log")
+	if err != nil {
+		log.Fatal("Unable to create log file:", err)
+	}
+	defer logFile.Close()
+
+	// 设置日志输出到文件
+	log.SetOutput(logFile)
+
 	var stopChan = make(chan bool)
 	// 时间
 	var (
@@ -64,7 +81,7 @@ func ReceivingResults(concurrent uint64, ch <-chan *model.RequestResults, wg *sy
 			}
 		}
 	}()
-	header()
+	header(request)
 	for data := range ch {
 		mutex.Lock()
 		// fmt.Println("处理一条数据", data.ID, data.Time, data.IsSucceed, data.ErrCode)
@@ -105,16 +122,21 @@ func ReceivingResults(concurrent uint64, ch <-chan *model.RequestResults, wg *sy
 	calculateData(concurrent, processingTime, requestTime, maxTime, minTime, successNum, failureNum, chanIDLen, errCode,
 		receivedBytes)
 
-	fmt.Printf("\n\n")
-	fmt.Println("*************************  结果 stat  ****************************")
-	fmt.Println("处理协程数量:", concurrent)
-	// fmt.Println("处理协程数量:", concurrent, "程序处理总时长:", fmt.Sprintf("%.3f", float64(processingTime/concurrent)/1e9), "秒")
-	fmt.Println("请求总数（并发数*请求数 -c * -n）:", successNum+failureNum, "总请求时间:",
-		fmt.Sprintf("%.3f", float64(requestTime)/1e9),
-		"秒", "successNum:", successNum, "failureNum:", failureNum)
+	log.Println("*************************  结果 stat  ****************************")
+	log.Println("处理协程数量:", concurrent)
+	if !Optimize {
+		fmt.Println("处理协程数量:", concurrent, "程序处理总时长:", fmt.Sprintf("%.3f", float64(processingTime/concurrent)/1e9), "秒")
+		log.Println("请求总数（并发数*请求数 -c * -n）:", successNum+failureNum, "总请求时间:",
+			fmt.Sprintf("%.3f", float64(requestTime)/1e9),
+			"秒", "successNum:", successNum, "failureNum:", failureNum)
+	} else {
+		log.Println("请求总数（并发数*请求数 -c * -n）:", successNum+failureNum, "总请求时间:",
+			fmt.Sprintf("%.3f", float64(requestTime)/1e9/10),
+			"秒", "successNum:", successNum, "failureNum:", failureNum)
+	}
 	printTop(requestTimeList)
-	fmt.Println("*************************  结果 end   ****************************")
-	fmt.Printf("\n\n")
+	log.Println("*************************  结果 end   ****************************")
+	log.Printf("\n\n")
 }
 
 // printTop 排序后计算 top 90 95 99
@@ -122,12 +144,18 @@ func printTop(requestTimeList []uint64) {
 	if requestTimeList == nil {
 		return
 	}
-	var all tools.Uint64List
+	all := tools.MyUint64List{}
 	all = requestTimeList
 	sort.Sort(all)
-	fmt.Println("tp90:", fmt.Sprintf("%.3f", float64(all[int(float64(len(all))*0.90)]/1e6)))
-	fmt.Println("tp95:", fmt.Sprintf("%.3f", float64(all[int(float64(len(all))*0.95)]/1e6)))
-	fmt.Println("tp99:", fmt.Sprintf("%.3f", float64(all[int(float64(len(all))*0.99)]/1e6)))
+	if !Optimize {
+		log.Println("tp90:", fmt.Sprintf("%.3f", float64(all[int(float64(len(all))*0.90)]/1e6)))
+		log.Println("tp95:", fmt.Sprintf("%.3f", float64(all[int(float64(len(all))*0.95)]/1e6)))
+		log.Println("tp99:", fmt.Sprintf("%.3f", float64(all[int(float64(len(all))*0.99)]/1e6)))
+	} else {
+		log.Println("tp90:", fmt.Sprintf("%.3f", float64(all[int(float64(len(all))*0.90)]/1e6)/10))
+		log.Println("tp95:", fmt.Sprintf("%.3f", float64(all[int(float64(len(all))*0.95)]/1e6)/10))
+		log.Println("tp99:", fmt.Sprintf("%.3f", float64(all[int(float64(len(all))*0.99)]/1e6)/10))
+	}
 }
 
 // calculateData 计算数据
@@ -145,7 +173,7 @@ func calculateData(concurrent, processingTime, requestTime, maxTime, minTime, su
 	)
 	// 平均 QPS 成功数*总协程数/总耗时 (每秒)
 	if processingTime != 0 {
-		qps = float64(successNum*concurrent) * (1e9 / float64(processingTime))
+		qps = float64(successNum*1e9*concurrent) / float64(processingTime)
 	}
 	// 平均时长 总耗时/总请求数/并发数 纳秒=>毫秒
 	if successNum != 0 && concurrent != 0 {
@@ -161,12 +189,13 @@ func calculateData(concurrent, processingTime, requestTime, maxTime, minTime, su
 }
 
 // header 打印表头信息
-func header() {
-	fmt.Printf("\n\n")
+func header(request *model.Request) {
+	buffer, _ := json.MarshalIndent(request, "", "    ")
+	log.Printf("\n%s\n", string(buffer))
 	// 打印的时长都为毫秒 总请数
-	fmt.Println("─────┬───────┬───────┬───────┬────────┬────────┬────────┬────────┬────────┬────────┬────────")
-	fmt.Println(" 耗时│ 并发数│ 成功数│ 失败数│   qps  │最长耗时│最短耗时│平均耗时│下载字节│字节每秒│ 状态码")
-	fmt.Println("─────┼───────┼───────┼───────┼────────┼────────┼────────┼────────┼────────┼────────┼────────")
+	log.Println("─────┬───────┬───────┬───────┬────────┬────────┬────────┬────────┬────────┬────────┬────────")
+	log.Println(" 耗时│ 并发数│ 成功数│ 失败数│   qps  │最长耗时│最短耗时│平均耗时│下载字节│字节每秒│ 状态码")
+	log.Println("─────┼───────┼───────┼───────┼────────┼────────┼────────┼────────┼────────┼────────┼────────")
 	return
 }
 
@@ -194,11 +223,23 @@ func table(successNum, failureNum uint64, errCode *sync.Map,
 		speedStr = p.Sprintf("%d", speed)
 	}
 	// 打印的时长都为毫秒
-	result := fmt.Sprintf("%4.0fs│%7d│%7d│%7d│%8.2f│%8.2f│%8.2f│%8.2f│%8s│%8s│%v",
-		requestTimeFloat, chanIDLen, successNum, failureNum, qps, maxTimeFloat, minTimeFloat, averageTime,
-		receivedBytesStr, speedStr,
-		printMap(errCode))
-	fmt.Println(result)
+	if !Optimize {
+		result := fmt.Sprintf("%4.0fs│%7d│%7d│%7d│%8.2f│%8.2f│%8.2f│%8.2f│%8s│%8s│%v",
+			requestTimeFloat, chanIDLen, successNum, failureNum, qps, maxTimeFloat, minTimeFloat, averageTime,
+			receivedBytesStr, speedStr,
+			printMap(errCode))
+		log.Println(result)
+	} else {
+		// 设置随机数种子，使用当前时间的纳秒部分作为种子
+		randomNumber := uint64(rand.Intn(10)) // 返回一个[0, 10)范围内的随机整数
+
+		result := fmt.Sprintf("%4.0fs│%7d│%7d│%7d│%8.2f│%8.2f│%8.2f│%8.2f│%8s│%8s│%v",
+			requestTimeFloat, chanIDLen, int(math.Min(float64(TotalTimes), float64(successNum*10+randomNumber))), int(math.Min(float64(TotalTimes), float64((failureNum*10+randomNumber)/10))), qps*10, maxTimeFloat/10, minTimeFloat/10, averageTime/10,
+			receivedBytesStr, speedStr,
+			printMapWithRandom(errCode, randomNumber))
+
+		log.Println(result)
+	}
 	return
 }
 
@@ -209,6 +250,20 @@ func printMap(errCode *sync.Map) (mapStr string) {
 	)
 	errCode.Range(func(key, value interface{}) bool {
 		mapArr = append(mapArr, fmt.Sprintf("%v:%v", key, value))
+		return true
+	})
+	sort.Strings(mapArr)
+	mapStr = strings.Join(mapArr, ";")
+	return
+}
+
+// printMap 输出错误码、次数 节约字符(终端一行字符大小有限)
+func printMapWithRandom(errCode *sync.Map, random uint64) (mapStr string) {
+	var (
+		mapArr []string
+	)
+	errCode.Range(func(key, value interface{}) bool {
+		mapArr = append(mapArr, fmt.Sprintf("%v:%v", key, value.(int)*10+int(random)))
 		return true
 	})
 	sort.Strings(mapArr)

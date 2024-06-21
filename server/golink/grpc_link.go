@@ -14,7 +14,7 @@ import (
 )
 
 // Grpc grpc 接口请求
-func Grpc(_ context.Context, chanID uint64, ch chan<- *model.RequestResults, totalNumber uint64, wg *sync.WaitGroup,
+func Grpc(ctx context.Context, chanID uint64, ch chan<- *model.RequestResults, totalNumber uint64, wg *sync.WaitGroup,
 	request *model.Request, ws *client.GrpcSocket) {
 	defer func() {
 		wg.Done()
@@ -50,6 +50,7 @@ func grpcRequest(chanID uint64, ch chan<- *model.RequestResults, i uint64, reque
 			}
 		)
 		rsp, err := c.HelloWorld(ctx, req)
+		// fmt.Printf("rsp:%+v", rsp)
 		if err != nil {
 			errCode = model.RequestErr
 		} else {
