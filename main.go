@@ -29,25 +29,24 @@ func (a *array) Set(s string) error {
 }
 
 var (
-	concurrency   uint64 = 1       // 并发数
-	totalNumber   uint64 = 1       // 请求数(单个并发/协程)
-	debugStr             = "false" // 是否是debug
-	requestURL           = ""      // 压测的url 目前支持，http/https ws/wss
-	path                 = ""      // curl文件路径 http接口压测，自定义参数设置
-	verify               = ""      // verify 验证方法 在server/verify中 http 支持:statusCode、json webSocket支持:json
-	headers       array            // 自定义头信息传递给服务器
-	body                 = ""      // HTTP POST方式传送数据
-	maxCon               = 1       // 单个连接最大请求数
-	code                 = 200     // 成功状态码
-	http2                = false   // 是否开http2.0
-	keepalive            = false   // 是否开启长连接
-	cpuNumber            = 1       // CUP 核数，默认为一核，一般场景下单核已经够用了
-	timeout       int64  = 0       // 超时时间，默认不设置
-	logPath              = ""      // 日志路径
-	userId               = ""      //
-	passwd               = ""      //
-	accountId            = ""      //
-	accountPasswd        = ""      //
+	concurrency uint64 = 1       // 并发数
+	totalNumber uint64 = 1       // 请求数(单个并发/协程)
+	debugStr           = "false" // 是否是debug
+	requestURL         = ""      // 压测的url 目前支持，http/https ws/wss
+	path               = ""      // curl文件路径 http接口压测，自定义参数设置
+	verify             = ""      // verify 验证方法 在server/verify中 http 支持:statusCode、json webSocket支持:json
+	headers     array            // 自定义头信息传递给服务器
+	body               = ""      // HTTP POST方式传送数据
+	maxCon             = 1       // 单个连接最大请求数
+	code               = 200     // 成功状态码
+	http2              = false   // 是否开http2.0
+	keepalive          = false   // 是否开启长连接
+	cpuNumber          = 1       // CUP 核数，默认为一核，一般场景下单核已经够用了
+	timeout     int64  = 0       // 超时时间，默认不设置
+	logPath            = ""      // 日志路径
+	userId             = ""      //
+	passwd             = ""      //
+	accountId          = ""      //
 )
 
 func init() {
@@ -69,13 +68,17 @@ func init() {
 	flag.StringVar(&userId, "user_id", userId, "用户名")
 	flag.StringVar(&passwd, "passwd", passwd, "密码")
 	flag.StringVar(&accountId, "account_id", accountId, "资金账户ID")
-	//flag.StringVar(&accountPasswd, "account_password", accountPasswd, "资金账户密码")
 	// 解析参数
 	flag.Parse()
 	headers = append(headers, fmt.Sprintf("user_id:%s", userId))
 
 	headers = append(headers, fmt.Sprintf("passwd:%s", passwd))
 	headers = append(headers, fmt.Sprintf("account_id:%s", accountId))
+	//if strings.Contains(requestURL, "InsertOrder") {
+	//	if instId == "" {
+	//		panic("InsertOrder需要指定有效合约")
+	//	}
+	//}
 	//headers = append(headers, fmt.Sprintf("account_passwd:%s", accountPasswd))
 }
 

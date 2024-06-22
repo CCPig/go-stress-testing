@@ -19,9 +19,29 @@ import (
 	"time"
 )
 
+type Token struct {
+	sync.RWMutex
+	quick_token   string
+	refresh_token string
+}
+
+func (t *Token) GetQuickToken() string {
+	t.RLock()
+	defer t.RUnlock()
+	return t.quick_token
+}
+
+func (t *Token) GetRefreshToken() string {
+	t.RLock()
+	defer t.RUnlock()
+	return t.refresh_token
+}
+
 const (
 	connectionMode = 1 // 1:顺序建立长链接 2:并发建立长链接
 )
+
+var token = &Token{}
 
 // init 注册验证器
 func init() {
@@ -62,8 +82,40 @@ func Dispose(ctx context.Context, concurrency, totalNumber uint64, request *mode
 	Auth := &Taurus.TaurusUserObj{}
 	counter := &Taurus.CounterObj{}
 	bypass := &Taurus.BypassObj{}
-	var quick_token string
-	var refresh_token string
+
+	RefreshToken := func(user_id, quick_token, refresh_token string) error {
+		option := make(map[string]string, 2)
+		option["obj"] = "Taurus.UserAuthServer.TaurusUserObj"
+		option["mac_list"] = ""
+		req := &Taurus.RefreshTokenReq{
+			Refresh_token: refresh_token,
+			Quick_token:   quick_token,
+			Client: Taurus.ClientInfo{
+				User_id:      user_id,
+				Channel:      "",
+				Guid:         "",
+				Xua:          "",
+				Imei:         "",
+				Macs:         nil,
+				Hosts:        nil,
+				Extra_params: nil,
+			},
+		}
+		rsp := &Taurus.RefreshTokenRsp{}
+		ret, err := Auth.RefreshToken(req, rsp, option)
+		if err != nil {
+			return err
+		}
+		if ret.Code < 0 {
+			return errors.New(fmt.Sprintf("%+v", ret))
+		}
+		func() {
+			token.Lock()
+			defer token.Unlock()
+			token.quick_token = rsp.Quick_token
+		}()
+		return nil
+	}
 	UserLogin := func() (err error) {
 		user_id, exist := request.Headers["user_id"]
 		if !exist {
@@ -115,8 +167,21 @@ func Dispose(ctx context.Context, concurrency, totalNumber uint64, request *mode
 		if login.Code < 0 {
 			return errors.New(fmt.Sprintf("%+v", login))
 		}
-		quick_token = rsp.Quick_token
-		refresh_token = rsp.Refresh_token
+		func() {
+			token.Lock()
+			defer token.Unlock()
+			token.quick_token = rsp.Quick_token
+			token.refresh_token = rsp.Refresh_token
+		}()
+
+		go func() {
+			//ticker := time.NewTicker(time.Minute * 3)
+			ticker := time.NewTicker(time.Second * 1)
+			select {
+			case <-ticker.C:
+				RefreshToken(user_id, token.GetQuickToken(), token.GetRefreshToken())
+			}
+		}()
 		return nil
 	}
 
@@ -139,7 +204,7 @@ func Dispose(ctx context.Context, concurrency, totalNumber uint64, request *mode
 			Client:     Taurus.ClientInfo{},
 			Extra_params: map[string]string{
 				"OPT_STATION_CS": "PC;IIP=58.48.38.46;IPORT=44496;LIP=10.242.1.56;MAC=e0be035d9d9b;HD=0025_3881_22B4_494B;PCN=KS-SHA-LP220149;CPU=bfebfbff000a0634;PI=/dev/nvme0n1p2 468G;VOL=sysfs /sys@VMT;V1.3.0.69	",
-				"quick_token":    quick_token,
+				"quick_token":    token.GetQuickToken(),
 			},
 		}
 		rsp := &Taurus.AccountLoginRsp{}
@@ -222,17 +287,19 @@ func Dispose(ctx context.Context, concurrency, totalNumber uint64, request *mode
 		case model.FormTypeKsf:
 			switch funcName {
 			case "UserLogin":
-				go golink.Ksf(ctx, i, ch, totalNumber, &wg, request, Auth, quick_token, refresh_token)
-			case "QryOrder":
-				fallthrough
+				go golink.Ksf(ctx, i, ch, totalNumber, &wg, request, Auth, token.GetQuickToken(), token.GetRefreshToken())
 			case "QryAsset":
 				fallthrough
 			case "QryPosition":
-				go golink.Ksf(ctx, i, ch, totalNumber, &wg, request, counter, quick_token, refresh_token)
-			case "QryTaskStatus":
-				go golink.Ksf(ctx, i, ch, totalNumber, &wg, request, bypass, quick_token, refresh_token)
+				go golink.Ksf(ctx, i, ch, totalNumber, &wg, request, counter, token.GetQuickToken(), token.GetRefreshToken())
+			case "QryOrder":
+				fallthrough
+			case "QryTrade":
+				fallthrough
+			case "QueryTaskStatus":
+				go golink.Ksf(ctx, i, ch, totalNumber, &wg, request, bypass, token.GetQuickToken(), token.GetRefreshToken())
 			case "InsertOrder":
-				go golink.Ksf(ctx, i, ch, totalNumber, &wg, request, counter, quick_token, refresh_token)
+				go golink.Ksf(ctx, i, ch, totalNumber, &wg, request, counter, token.GetQuickToken(), token.GetRefreshToken())
 			default:
 				panic("ksf url error")
 			}
