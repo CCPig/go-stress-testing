@@ -14,6 +14,8 @@ import (
 	"github.com/link1st/go-stress-testing/server/verify"
 	"go.k8sf.cloud/go/KsfGo/ksf"
 	"go.k8sf.cloud/go/KsfGo/ksf/util/endpoint"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -54,6 +56,31 @@ func init() {
 	model.RegisterVerifyWebSocket("json", verify.WebSocketJSON)
 }
 
+func getEp(url string) (ep endpoint.Endpoint, obj string, err error) {
+	//url 10.242.100.33:10400/InsertOrder，解析一下成ip, port
+	vec := strings.Split(url, "/")
+	if len(vec) < 2 {
+		err = errors.New("ksf url error")
+		return
+	}
+
+	vec2 := strings.Split(vec[0], ":")
+	if len(vec2) < 2 {
+		err = errors.New("ksf url error")
+		return
+	}
+
+	ip, obj := vec2[0], vec[len(vec)-1]
+
+	port, err := strconv.ParseInt(vec2[1], 10, 32)
+	if err != nil {
+		return
+	}
+
+	ep = endpoint.Parse(fmt.Sprintf("tcp -h %s -p %d -t 20000 -e 1", ip, port))
+	return
+}
+
 // Dispose 处理函数
 func Dispose(ctx context.Context, concurrency, totalNumber uint64, request *model.Request) {
 	// 设置接收数据缓存
@@ -69,15 +96,14 @@ func Dispose(ctx context.Context, concurrency, totalNumber uint64, request *mode
 	}
 	go statistics.ReceivingResults(concurrency, ch, &wgReceiving, request)
 
-	vec := strings.Split(request.URL, "/")
-	if len(vec) < 2 {
-		panic("ksf url error")
+	ep, funcName, err := getEp(request.URL)
+	if err != nil {
+		panic(err)
 	}
-	funcName := vec[len(vec)-1]
+
 	request.FuncName = funcName
 
-	ep := endpoint.Parse(vec[0])
-
+	os.Args = os.Args[0:1]
 	comm := ksf.NewCommunicator()
 	Auth := &Taurus.TaurusUserObj{}
 	counter := &Taurus.CounterObj{}
@@ -200,7 +226,7 @@ func Dispose(ctx context.Context, concurrency, totalNumber uint64, request *mode
 		req := &Taurus.AccountLoginReq{
 			Account_id: acc_id,
 			Pwd:        "",
-			Request_id: 0,
+			Request_id: 1,
 			Client:     Taurus.ClientInfo{},
 			Extra_params: map[string]string{
 				"OPT_STATION_CS": "PC;IIP=58.48.38.46;IPORT=44496;LIP=10.242.1.56;MAC=e0be035d9d9b;HD=0025_3881_22B4_494B;PCN=KS-SHA-LP220149;CPU=bfebfbff000a0634;PI=/dev/nvme0n1p2 468G;VOL=sysfs /sys@VMT;V1.3.0.69	",

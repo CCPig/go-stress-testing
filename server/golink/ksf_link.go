@@ -6,25 +6,32 @@ import (
 	"github.com/link1st/go-stress-testing/Proto/Taurus"
 	"github.com/link1st/go-stress-testing/helper"
 	"github.com/link1st/go-stress-testing/model"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
 // Grpc grpc 接口请求
-func Ksf(ctx context.Context, chanID uint64, ch chan<- *model.RequestResults, totalNumber uint64, wg *sync.WaitGroup,
-	request *model.Request, prx interface{}, quick_token, refresh_token string) {
+func Ksf(
+	ctx context.Context, chanID uint64, ch chan<- *model.RequestResults, totalNumber uint64, wg *sync.WaitGroup,
+	request *model.Request, prx interface{}, quick_token, refresh_token string,
+) {
 	defer func() {
 		wg.Done()
 	}()
 	for i := uint64(0); i < totalNumber; i++ {
 		ksfRequest(chanID, ch, i, request, prx, quick_token, refresh_token)
+		time.Sleep(1 * time.Second)
 	}
 	return
 }
 
 // grpcRequest 请求
-func ksfRequest(chanID uint64, ch chan<- *model.RequestResults, i uint64, request *model.Request,
-	prx interface{}, quick_token string, refresh_token string) {
+func ksfRequest(
+	chanID uint64, ch chan<- *model.RequestResults, i uint64, request *model.Request,
+	prx interface{}, quick_token string, refresh_token string,
+) {
 	var (
 		startTime = time.Now()
 		isSucceed = false
@@ -105,7 +112,7 @@ func ksfRequest(chanID uint64, ch chan<- *model.RequestResults, i uint64, reques
 			}
 			rsp := &Taurus.QryTradeRsp{}
 			_, err := bypass.QryTrade(req, rsp, option)
-			//fmt.Printf("ret:%+v|rsp:%+v", ret, rsp)
+			// fmt.Printf("ret:%+v|rsp:%+v", ret, rsp)
 			if err != nil {
 				errCode = model.RequestErr
 			} else {
@@ -142,7 +149,7 @@ func ksfRequest(chanID uint64, ch chan<- *model.RequestResults, i uint64, reques
 			}
 			rsp := &Taurus.QryOrderRsp{}
 			_, err := bypass.QryOrder(req, rsp, option)
-			//fmt.Printf("ret:%+v|rsp:%+v", ret, rsp)
+			// fmt.Printf("ret:%+v|rsp:%+v", ret, rsp)
 			if err != nil {
 				errCode = model.RequestErr
 			} else {
@@ -195,8 +202,8 @@ func ksfRequest(chanID uint64, ch chan<- *model.RequestResults, i uint64, reques
 
 			rsp := &Taurus.QueryTaskStatusRsp{}
 			_, err := bypass.QueryTaskStatus(req, rsp, option)
-			//fmt.Printf("ret:%+v|rsp:%+v\n", ret, rsp)
-			//_ = ret
+			// fmt.Printf("ret:%+v|rsp:%+v\n", ret, rsp)
+			// _ = ret
 			if err != nil {
 				errCode = model.RequestErr
 			} else {
@@ -240,7 +247,7 @@ func ksfRequest(chanID uint64, ch chan<- *model.RequestResults, i uint64, reques
 			}
 			rsp := &Taurus.QryAssetRsp{}
 			_, err := counter.QryAsset(req, rsp, option)
-			//fmt.Printf("ret:%+v|rsp:%+v", ret, rsp)
+			// fmt.Printf("ret:%+v|rsp:%+v", ret, rsp)
 			if err != nil {
 				errCode = model.RequestErr
 			} else {
@@ -283,7 +290,7 @@ func ksfRequest(chanID uint64, ch chan<- *model.RequestResults, i uint64, reques
 			}
 			rsp := &Taurus.QryPositionRsp{}
 			_, err := counter.QryPosition(req, rsp, option)
-			//fmt.Printf("ret:%+v|rsp:%+v", ret, rsp)
+			// fmt.Printf("ret:%+v|rsp:%+v", ret, rsp)
 			if err != nil {
 				errCode = model.RequestErr
 			} else {
@@ -306,27 +313,79 @@ func ksfRequest(chanID uint64, ch chan<- *model.RequestResults, i uint64, reques
 				panic("no account_id")
 			}
 
-			//uuid.EnableRandPool()
-			//uuid, _ := uuid.NewUUID()
+			inst, exist := request.Headers["inst"]
+			if !exist {
+				panic("no inst")
+			}
+
+			side, exist := request.Headers["side"]
+			if !exist {
+				panic("no side")
+			}
+
+			price, exist := request.Headers["price"]
+			if !exist {
+				panic("no price")
+			}
+
+			dPrice, err := strconv.ParseFloat(price, 64)
+			if err != nil {
+				panic(err)
+			}
+
+			priceType, exist := request.Headers["price_type"]
+			if !exist {
+				panic("no priceType")
+			}
+
+			volume, exist := request.Headers["vol"]
+			if !exist {
+				panic("no volume")
+			}
+
+			IVol, err := strconv.ParseFloat(volume, 64)
+			if err != nil {
+				panic(err)
+			}
+
+			instId := ""
+			market := request.Headers["market"]
+			if market == "SH" {
+				instId = inst + ".XSHG.CS"
+			} else if market == "SZ" {
+				instId = inst + ".XSHE.CS"
+			} else if market == "" {
+				if strings.HasPrefix(inst, "6") {
+					instId = inst + ".XSHG.CS"
+				} else {
+					instId = inst + ".XSHE.CS"
+				}
+			} else {
+				panic("market error, only SH or SZ")
+			}
+
+			// uuid.EnableRandPool()
+			// uuid, _ := uuid.NewUUID()
 			option := make(map[string]string, 2)
-			//option["obj"] = "Trade.SIMProxyServer.TradeObj"
+			// option["obj"] = "Trade.SIMProxyServer.TradeObj"
 			option["obj"] = "Trade.ATPProxyServer.TradeObj"
 			option["mac_list"] = ""
 			option["acc_id"] = accountId
 			option["quick_token"] = quick_token
 			option["refresh_token"] = refresh_token
+
 			req := &Taurus.InsertOrderReq{
 				User_id:         userId,
 				Account_id:      accountId,
 				Instrument_type: "",
 				Local_order_id:  "",
-				Instrument_id:   "000001.XSHE.CS",
-				Order_side:      Taurus.ORDER_SIDE_BUY,
-				Volume:          500,
-				Price_type:      Taurus.PRICE_TYPE_L,
-				Price:           10,
+				Instrument_id:   instId,
+				Order_side:      side,
+				Volume:          IVol,
+				Price_type:      priceType,
+				Price:           dPrice,
 				Task_id:         "",
-				Order_way:       "",
+				Order_way:       "7",
 				Request_id:      0,
 				Extra_params: map[string]string{
 					"OPT_STATION_CS": "PC;IIP=58.48.38.46;IPORT=44496;LIP=10.242.1.56;MAC=e0be035d9d9b;HD=0025_3881_22B4_494B;PCN=KS-SHA-LP220149;CPU=bfebfbff000a0634;PI=/dev/nvme0n1p2 468G;VOL=sysfs /sys@VMT;V1.3.0.69	",
